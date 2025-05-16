@@ -38,6 +38,43 @@
             chatBox.scrollTop = chatBox.scrollHeight;
             messageInput.value = '';
         });
+
+        // Генерация токена
+        fetch('../../token.php')
+        .then(res => res.json())
+        .then(data => {
+            console.log('JWT токен:', data.token);
+            console.log('visitor_id:', data.visitor_id);
+
+            const centrifuge = new Centrifuge("ws://localhost:8000/connection/websocket", {
+                token: data.token
+            });
+
+            centrifuge
+            .on('connecting', ctx => console.log(`connecting: ${ctx.code}, ${ctx.reason}`))
+            .on('connected', ctx => console.log(`connected over ${ctx.transport}`))
+            .on('disconnected', ctx => console.log(`disconnected: ${ctx.code}, ${ctx.reason}`))
+            .connect();
+
+            const sub = centrifuge.newSubscription("channel");
+
+            sub
+            .on('publication', ctx => {
+                // Получение сообщение
+                const messageDiv = document.createElement('div');
+                messageDiv.classList.add('mb-2', 'p-2', 'bg-dark', 'text-light', 'text-end', 'rounded');
+                messageDiv.textContent = "Админ: " + ctx.data.message;
+                chatBox.appendChild(messageDiv);
+                chatBox.scrollTop = chatBox.scrollHeight;
+            })
+            .on('subscribing', ctx => console.log(`subscribing: ${ctx.code}, ${ctx.reason}`))
+            .on('subscribed', ctx => console.log('subscribed', ctx))
+            .on('unsubscribed', ctx => console.log(`unsubscribed: ${ctx.code}, ${ctx.reason}`))
+            .subscribe();
+        })
+        .catch(err => {
+            console.error('Ошибка при получении токена или подключении:', err);
+        });
     </script>
 </body>
 
