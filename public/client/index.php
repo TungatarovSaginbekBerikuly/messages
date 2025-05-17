@@ -9,72 +9,111 @@
 
 <body class="container py-4">
     <h1>Поддержка</h1>
-    <div id="chatBox" class="border rounded p-3 mb-3" style="height: 300px; overflow-y: auto;">
-        <!-- Сообщения будут добавляться динамический -->
-    </div>
+
+    <div id="chatBox" class="border rounded p-3 mb-3" style="height: 300px; overflow-y: auto;"></div>
+
     <form id="messageForm" class="input-group">
         <input id="messageInput" class="form-control" placeholder="Ваше сообщение..." required>
         <button class="btn btn-primary">Отправить</button>
     </form>
 
     <script src="https://cdn.jsdelivr.net/npm/centrifuge@5/dist/centrifuge.min.js"></script>
-    
+
     <script>
         const chatBox = document.getElementById('chatBox');
         const messageForm = document.getElementById('messageForm');
         const messageInput = document.getElementById('messageInput');
+        let visitorId;
 
-        // Отправка сообщений
-        messageForm.addEventListener('submit', function (e) {
-            e.preventDefault(); 
-            const messageText = messageInput.value.trim();
-            
-            if (messageText === '') return;
-            
+        function renderMessage(msg) {
             const messageDiv = document.createElement('div');
-            messageDiv.classList.add('mb-2', 'p-2', 'bg-light', 'rounded');
-            messageDiv.textContent = "Вы: " + messageText;
+            messageDiv.classList.add('mb-2', 'p-2', 'rounded');
+
+            if (!msg.fromAdmin) {
+                messageDiv.classList.add('bg-dark', 'text-light', 'text-end');
+                messageDiv.textContent = "Админ: " + msg.message;
+            } else {
+                messageDiv.classList.add('bg-light');
+                messageDiv.textContent = "Вы: " + msg.message;
+            }
+
             chatBox.appendChild(messageDiv);
             chatBox.scrollTop = chatBox.scrollHeight;
-            messageInput.value = '';
-        });
+        }
 
-        // Генерация токена
         fetch('../../token.php')
-        .then(res => res.json())
-        .then(data => {
-            console.log('JWT токен:', data.token);
-            console.log('visitor_id:', data.visitor_id);
+            .then(res => res.json())
+            .then(data => {
+                const token = data.token;
+                visitorId = data.visitor_id;
+                const channel = 'user_' + visitorId;
 
-            const centrifuge = new Centrifuge("ws://localhost:8000/connection/websocket", {
-                token: data.token
-            });
+                const centrifuge = new Centrifuge("ws://localhost:8000/connection/websocket", {
+                    token: token
+                });
 
-            centrifuge
-            .on('connecting', ctx => console.log(`connecting: ${ctx.code}, ${ctx.reason}`))
-            .on('connected', ctx => console.log(`connected over ${ctx.transport}`))
-            .on('disconnected', ctx => console.log(`disconnected: ${ctx.code}, ${ctx.reason}`))
-            .connect();
+                centrifuge
+                    .on('connecting', ctx => console.log(`connecting: ${ctx.code}, ${ctx.reason}`))
+                    .on('connected', ctx => console.log(`connected over ${ctx.transport}`))
+                    .on('disconnected', ctx => console.log(`disconnected: ${ctx.code}, ${ctx.reason}`))
+                    .connect();
 
-            const sub = centrifuge.newSubscription("channel");
+                const sub = centrifuge.newSubscription(channel);
 
-            sub
-            .on('publication', ctx => {
-                // Получение сообщение
-                const messageDiv = document.createElement('div');
-                messageDiv.classList.add('mb-2', 'p-2', 'bg-dark', 'text-light', 'text-end', 'rounded');
-                messageDiv.textContent = "Админ: " + ctx.data.message;
-                chatBox.appendChild(messageDiv);
-                chatBox.scrollTop = chatBox.scrollHeight;
+                sub.on('publication', ctx => {
+                    renderMessage(ctx.data);
+                });
+
+                sub
+                    .on('subscribed', ctx => {
+                        console.log('Подписка успешно:', ctx);
+
+                        // Загружаем историю только после подписки
+                        fetch('../../history.php', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ visitor_id: visitorId })
+                        })
+                            .then(res => res.json())
+                            .then(json => {
+                                const history = json.result?.publications;
+                                if (Array.isArray(history)) {
+                                    history.forEach(item => {
+                                        renderMessage(item.data);
+                                    });
+                                } else {
+                                    console.warn('Неверный формат истории:', json);
+                                }
+                            })
+                            .catch(err => console.error('Ошибка загрузки истории:', err));
+                    })
+                    .on('subscribing', ctx => console.log(`subscribing: ${ctx.code}, ${ctx.reason}`))
+                    .on('unsubscribed', ctx => console.log(`unsubscribed: ${ctx.code}, ${ctx.reason}`))
+                    .subscribe();
+
+                messageForm.addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    const messageText = messageInput.value.trim();
+                    if (messageText === '') return;
+
+                    fetch('../../publish.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            visitor_id: visitorId,
+                            message: messageText
+                        })
+                    })
+                        .then(res => res.json())
+                        .then(() => {
+                            messageInput.value = '';
+                        })
+                        .catch(err => console.error('Ошибка отправки:', err));
+                });
             })
-            .on('subscribing', ctx => console.log(`subscribing: ${ctx.code}, ${ctx.reason}`))
-            .on('subscribed', ctx => console.log('subscribed', ctx))
-            .on('unsubscribed', ctx => console.log(`unsubscribed: ${ctx.code}, ${ctx.reason}`))
-            .subscribe();
-        })
-        .catch(err => {
-            console.error('Ошибка при получении токена или подключении:', err);
-        });
+            .catch(err => {
+                console.error('Ошибка при получении токена:', err);
+            });
     </script>
 </body>
 
