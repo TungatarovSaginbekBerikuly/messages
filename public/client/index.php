@@ -58,7 +58,10 @@
                     .on('disconnected', ctx => console.log(`disconnected: ${ctx.code}, ${ctx.reason}`))
                     .connect();
 
-                const sub = centrifuge.newSubscription(channel);
+                const sub = centrifuge.newSubscription(channel, {
+                    presence: true
+                });
+
 
                 sub.on('publication', ctx => {
                     renderMessage(ctx.data);

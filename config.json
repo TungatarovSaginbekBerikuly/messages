@@ -23,8 +23,8 @@
       "allow_history_for_client": true,
       "history_size": 100,
       "history_ttl": "3600s",
-      "recover": true,
-      "positioning": true
+      "presence": true,
+      "allow_presence_for_client": true
     }
   }
 }
